@@ -1,10 +1,8 @@
 #include <inttypes.h>
 #include <avr/sleep.h>
-#include <avr/io.h>          // (1)
+#include <avr/io.h>
 /* #include <util/delay.h> */
 #include <avr/interrupt.h>
-
-/* #include "iocompat.h"		/1* Note [1] *1/ */
 
 // PCINT3/XTAL1/CLKI/~OC1B/ADC3
 #define BUTTON PINB3
@@ -13,12 +11,15 @@
 #define LED PB4
 
 #define STATE(a)
-enum {OFF, WAIT_ON, DIM, DIM_WAIT, ON, WAIT_TWO};
+enum {OFF, WAIT_ON, WAIT_TWO, ON_WAIT, DIM, ON, DIM_WAIT};
 enum {UP, DOWN};
+
+#define PWM_MIN 10
+#define PWM_MAX 255
 
 volatile uint8_t state = OFF;
 volatile uint8_t direction = UP;
-volatile uint8_t pwm = 255;
+volatile uint8_t pwm = PWM_MIN;
 
 uint8_t button() {
    static uint8_t old_state=0;
@@ -41,20 +42,20 @@ void ioinit (void) {
    CLKPR = _BV(CLKPCE);
    CLKPR = _BV(CLKPS2) | _BV(CLKPS2);
 
-   GTCCR = _BV(PWM1B) | _BV(COM1B1);
-   TCCR1 |= _BV(CS12) | _BV(CS10);
-   // /1024 prescaler
-   TCCR0B |= _BV(CS02) | _BV(CS00);
+   TCCR0A |= WGM01; // timer 0 CTC mode
+   TCCR0B |= _BV(CS02) | _BV(CS00); // /1024 prescale
+   OCR0A = 0x80;
+
+   GTCCR |= _BV(PWM1B) | _BV(COM1B1);
+   TCCR1 |= _BV(CS12) | _BV(CS10); // /1 prescale
    /* OCR1B = pwm; */
 
    /* Enable timer 1 overflow, timer 0 a compare interrupts. */
    TIMSK = _BV(TOIE1) | _BV(OCIE0A);
 
-   TCCR0A |= WGM01; // CTC mode
-   OCR0A = 0x80;
+   /* DDRB |= _BV(LED); */
 
-   DDRB |= _BV(LED);
-
+   // Pin change interrupt on button
    GIMSK |= _BV(PCIE);
    PCMSK |= _BV(PCINT3);
 
@@ -66,19 +67,18 @@ ISR(PCINT0_vect) {
    set_sleep_mode(SLEEP_MODE_IDLE);
    if(state == OFF) 
       TCNT0 = 0;
-   PORTB &= ~_BV(LED);
 }
 
 ISR (TIMER1_OVF_vect) {
-   if (state == DIM || state == DIM_WAIT ) {
+   if (state == DIM ) { // || state == DIM_WAIT ) {
       switch (direction) {
          case UP:
-            if (++pwm == 0xff)
+            if (++pwm >= PWM_MAX)
                direction = DOWN;
             break;
 
          case DOWN:
-            if (--pwm == 0)
+            if (--pwm <= PWM_MIN)
                direction = UP;
             break;
       }
@@ -94,22 +94,12 @@ ISR (TIMER0_COMPA_vect) {
          set_sleep_mode(SLEEP_MODE_PWR_DOWN);
          state = OFF;
          break;
+      case ON_WAIT:
       case DIM_WAIT:
          state = DIM;
+         OCR0A = 0x80;
          break;
    }
-   /* PORTB ^= _BV(LED); */
-
-}
-
-int click() {
-   static uint8_t was_on;
-   if(button()) was_on = 1;
-   if(was_on && !button()) {
-      was_on = 0;
-      return 1;
-   }
-   return 0;
 }
 
 int main (void) {
@@ -129,9 +119,14 @@ int main (void) {
             break;
          case WAIT_TWO:
             if(button()) {
-               OCR1B = pwm;
-               state = DIM;
-               STATE(ON);
+               cli();
+               /* OCR1B = pwm; */
+               DDRB |= _BV(LED);
+               state = ON_WAIT;
+               STATE(ON_WAIT);
+               TCNT0=0;
+               OCR0A = 0xff;
+               sei();
             }
             break;
          case ON:
@@ -139,40 +134,44 @@ int main (void) {
                cli();
                state = DIM_WAIT;
                STATE(DIM_WAIT);
-               TCNT0=0;
+               TCNT0 = 0;
+               OCR0A = 0xff;
                sei();
             }
             break;
          case DIM_WAIT:
             if(!button()) {
+               cli();
                set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+               /* OCR1B = 0; */
+               /* pwm = PWM_MIN; */
+               /* direction = UP; */
+               PORTB &= ~_BV(LED);
+               DDRB &= ~_BV(LED);
                state = OFF;
                STATE(OFF);
+               sei();
             }
             break;
          case DIM:
             if(!button()) {
+               cli();
                state = ON;
                STATE(ON);
+               sei();
             }
             break;
          case OFF:
-            OCR1B = 0xff;
-            /* pwm = 0xff; */
-            /* direction = UP; */
-            /* PORTB |= _BV(LED); */
             if(button()){
+               cli();
                TCNT0=0;
                state=WAIT_ON;
                STATE(WAIT_ON);
+               sei();
             }
             break;
-         default:
-            button();
       }
-      /* pwm=button()*128; */
       sleep_mode();
-      /* PORTB ^= (button << LED); */
       /* _delay_ms(500); */
    }
 
