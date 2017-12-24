@@ -11,7 +11,7 @@
 #define LED PB4
 
 #define STATE(a)
-enum {OFF, WAIT_ON, WAIT_TWO, ON_WAIT, DIM, ON, DIM_WAIT};
+enum {OFF, WAIT_ONE, WAIT_TWO, WAIT_THREE, DIM, ON, DIM_WAIT};
 enum {UP, DOWN};
 
 #define PWM_MIN 1
@@ -77,13 +77,13 @@ ISR (TIMER1_OVF_vect) {
 
 ISR (TIMER0_COMPA_vect) {
    switch(state){
-      case WAIT_ON:
+      case WAIT_ONE:
       case WAIT_TWO:
+      case WAIT_THREE:
       case OFF:
          set_sleep_mode(SLEEP_MODE_PWR_DOWN);
          state = OFF;
          break;
-      case ON_WAIT:
       case DIM_WAIT:
          state = DIM;
          OCR0A = 0x80;
@@ -121,25 +121,33 @@ int main (void) {
 
    while(1) {
       switch(state) {
-         case WAIT_ON:
+         case WAIT_ONE:
             if(!button()) {
                cli();
                state = WAIT_TWO;
                STATE(WAIT_TWO);
-               TCNT0=0;
+               TCNT0 = 0;
                sei(); 
             }
             break;
          case WAIT_TWO:
             if(button()) {
                cli();
+               state = WAIT_THREE;
+               STATE(WAIT_THREE);
+               TCNT0 = 0;
+               sei(); 
+            }
+            break;
+         case WAIT_THREE:
+            if(!button()) {
+               cli();
+               state = ON;
+               STATE(ON);
                DDRB |= _BV(LED);
                /* OCR1B = pwm; */
                /* OCR1B = 1; */
-               state = ON_WAIT;
-               STATE(ON_WAIT);
-               TCNT0=0;
-               OCR0A = 0xff;
+               /* OCR0A = 0xff; */
                sei();
             }
             break;
@@ -156,6 +164,7 @@ int main (void) {
          case DIM_WAIT:
             if(!button()) {
                cli();
+               OCR0A = 0x80;
                set_sleep_mode(SLEEP_MODE_PWR_DOWN);
                /* OCR1B = 0; */
                /* pwm = PWM_MIN; */
@@ -178,9 +187,9 @@ int main (void) {
          case OFF:
             if(button()){
                cli();
+               state = WAIT_ONE;
+               STATE(WAIT_ONE);
                TCNT0 = 0;
-               state = WAIT_ON;
-               STATE(WAIT_ON);
                sei();
             }
             break;
