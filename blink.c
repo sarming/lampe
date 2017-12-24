@@ -15,33 +15,14 @@ enum {OFF, WAIT_ON, WAIT_TWO, ON_WAIT, DIM, ON, DIM_WAIT};
 enum {UP, DOWN};
 
 #define PWM_MIN 1
-#define PWM_MAX 255
+#define PWM_MAX 254
 
-volatile uint8_t state = OFF;
-volatile uint8_t direction = UP;
-volatile uint8_t pwm = PWM_MIN;
-
-uint8_t button() {
-   static uint8_t old_state=0;
-   static uint8_t change_cnt=0;
-
-   return !(PINB & _BV(BUTTON));
-
-   // SW debounce 
-   if (old_state == !!(PINB & _BV(BUTTON)) ) {
-      change_cnt = 0;
-   } else {
-      ++change_cnt;
-   }
-   if ( change_cnt > 5) {
-      old_state = !old_state;
-      change_cnt = 0;
-   }
-   return !old_state;
-}
+volatile uint8_t state;
+volatile uint8_t direction;
+volatile uint8_t pwm;
 
 void ioinit (void) {
-   // Clock prescale: /64
+   // Clock prescale: /64 = 125 KHz
    CLKPR = _BV(CLKPCE);
    CLKPR = _BV(CLKPS2) | _BV(CLKPS2);
 
@@ -50,7 +31,7 @@ void ioinit (void) {
    OCR0A = 0x80;
 
    GTCCR |= _BV(PWM1B) | _BV(COM1B1);
-   TCCR1 |= _BV(CS12) | _BV(CS10); // /1 prescale
+   TCCR1 |= _BV(CS12) | _BV(CS10); // /16 prescale
    /* OCR1B = pwm; */
 
    /* Enable timer 1 overflow, timer 0 a compare interrupts. */
@@ -65,7 +46,6 @@ void ioinit (void) {
    PCMSK |= _BV(PCINT3);
 
    sei ();
-
 }
 
 ISR(PCINT0_vect) {
@@ -78,13 +58,17 @@ ISR (TIMER1_OVF_vect) {
    if (state == DIM ) { // || state == DIM_WAIT ) {
       switch (direction) {
          case UP:
-            if (++pwm >= PWM_MAX)
+            if (++pwm >= PWM_MAX){
                direction = DOWN;
+               --pwm;
+            }
             break;
 
          case DOWN:
-            if (--pwm <= PWM_MIN)
+            if (--pwm <= PWM_MIN) {
                direction = UP;
+               ++pwm;
+            }
             break;
       }
       OCR1B = pwm;
@@ -107,7 +91,31 @@ ISR (TIMER0_COMPA_vect) {
    }
 }
 
+uint8_t button() {
+   return !(PINB & _BV(BUTTON));
+
+   // SW debounce 
+   static uint8_t old_state=0;
+   static uint8_t change_cnt=0;
+
+   if (old_state == !!(PINB & _BV(BUTTON)) ) {
+      change_cnt = 0;
+   } else {
+      ++change_cnt;
+   }
+   if ( change_cnt > 5) {
+      old_state = !old_state;
+      change_cnt = 0;
+   }
+   return !old_state;
+}
+
+
 int main (void) {
+
+   state = OFF;
+   pwm = PWM_MIN;
+   direction = UP;
 
    ioinit ();
 
@@ -125,8 +133,9 @@ int main (void) {
          case WAIT_TWO:
             if(button()) {
                cli();
-               /* OCR1B = pwm; */
                DDRB |= _BV(LED);
+               /* OCR1B = pwm; */
+               /* OCR1B = 1; */
                state = ON_WAIT;
                STATE(ON_WAIT);
                TCNT0=0;
@@ -169,8 +178,8 @@ int main (void) {
          case OFF:
             if(button()){
                cli();
-               TCNT0=0;
-               state=WAIT_ON;
+               TCNT0 = 0;
+               state = WAIT_ON;
                STATE(WAIT_ON);
                sei();
             }
