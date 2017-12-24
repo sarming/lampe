@@ -25,6 +25,9 @@ uint8_t button() {
    static uint8_t old_state=0;
    static uint8_t change_cnt=0;
 
+   return !(PINB & _BV(BUTTON));
+
+   // SW debounce 
    if (old_state == !!(PINB & _BV(BUTTON)) ) {
       change_cnt = 0;
    } else {
@@ -54,6 +57,8 @@ void ioinit (void) {
    TIMSK = _BV(TOIE1) | _BV(OCIE0A);
 
    /* DDRB |= _BV(LED); */
+
+   PORTB = _BV(BUTTON); //enable pullup
 
    // Pin change interrupt on button
    GIMSK |= _BV(PCIE);
