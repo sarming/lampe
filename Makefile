@@ -1,6 +1,6 @@
 TARGET=blink
-MCU=attiny85
-# MCU=attiny25
+# MCU=attiny85
+MCU=attiny25
 SOURCES=blink.c
 
 PROGRAMMER=dragon_isp

@@ -14,7 +14,7 @@
 enum {OFF, WAIT_ON, WAIT_TWO, ON_WAIT, DIM, ON, DIM_WAIT};
 enum {UP, DOWN};
 
-#define PWM_MIN 10
+#define PWM_MIN 1
 #define PWM_MAX 255
 
 volatile uint8_t state = OFF;
@@ -34,7 +34,7 @@ uint8_t button() {
       old_state = !old_state;
       change_cnt = 0;
    }
-   return old_state;
+   return !old_state;
 }
 
 void ioinit (void) {
