@@ -11,10 +11,10 @@
 #define LED PB4
 
 #define STATE(a)
-enum {OFF, WAIT_ONE, WAIT_TWO, WAIT_THREE, DIM, ON, DIM_WAIT};
+enum {OFF, WAIT_ONE, WAIT_TWO, WAIT_THREE, ON, DIM, DIM_WAIT};
 enum {UP, DOWN};
 
-#define PWM_MIN 1
+#define PWM_MIN 2
 #define PWM_MAX 254
 
 volatile uint8_t state;
@@ -28,7 +28,7 @@ void ioinit (void) {
 
    TCCR0A |= WGM01; // timer 0 CTC mode
    TCCR0B |= _BV(CS02) | _BV(CS00); // /1024 prescale
-   /* OCR0A = 0x80; */
+   OCR0A = 0x80;
 
    GTCCR |= _BV(PWM1B) | _BV(COM1B1);
    TCCR1 |= _BV(CS12) | _BV(CS10); // /16 prescale
@@ -45,24 +45,9 @@ void ioinit (void) {
    GIMSK |= _BV(PCIE);
    PCMSK |= _BV(PCINT3);
 
-   sei ();
 }
 
-void set_timeout(uint8_t cnt) {
-   TCNT0 = 0;
-   OCR0A = cnt;
-   TIFR |= _BV(OCF0A);
-   if(cnt)
-      TIMSK |= _BV(OCIE0A);
-   else
-      TIMSK &= ~_BV(OCIE0A);
-}
-
-ISR(PCINT0_vect) {
-   set_sleep_mode(SLEEP_MODE_IDLE);
-   if(state == OFF)
-      set_timeout(0x80);
-}
+EMPTY_INTERRUPT(PCINT0_vect);
 
 ISR (TIMER1_OVF_vect) {
    if (state == DIM ) { // || state == DIM_WAIT ) {
@@ -85,126 +70,87 @@ ISR (TIMER1_OVF_vect) {
    }
 }
 
-ISR (TIMER0_COMPA_vect) {
-   switch(state){
-      case WAIT_ONE:
-      case WAIT_TWO:
-      case WAIT_THREE:
-      case OFF:
-         set_sleep_mode(SLEEP_MODE_PWR_DOWN);
-         state = OFF;
-         break;
-      case DIM_WAIT:
-         state = DIM;
-         break;
-   }
-   set_timeout(0);
-}
-
-uint8_t button() {
-   return !(PINB & _BV(BUTTON));
-
-   // SW debounce 
-   static uint8_t old_state=0;
-   static uint8_t change_cnt=0;
-
-   if (old_state == !!(PINB & _BV(BUTTON)) ) {
-      change_cnt = 0;
-   } else {
-      ++change_cnt;
-   }
-   if ( change_cnt > 5) {
-      old_state = !old_state;
-      change_cnt = 0;
-   }
-   return !old_state;
-}
-
-
 int main (void) {
 
    state = OFF;
    pwm = PWM_MIN;
    direction = UP;
 
+   set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+
    ioinit ();
 
+   /* OCR1B = 255; */
+
+
    while(1) {
-      switch(state) {
-         case WAIT_ONE:
-            if(!button()) {
-               cli();
-               state = WAIT_TWO;
-               STATE(WAIT_TWO);
-               set_timeout(0x80);
-               sei(); 
-            }
-            break;
+      cli();
+
+      uint8_t old_state = state;
+      uint8_t button =  !(PINB & _BV(BUTTON));
+      uint8_t timeout = TIFR & _BV(OCF0A);
+      TIFR |= _BV(OCF0A);
+
+      switch(old_state) {
+         case OFF:
          case WAIT_TWO:
-            if(button()) {
-               cli();
-               state = WAIT_THREE;
-               STATE(WAIT_THREE);
-               set_timeout(0x80);
-               sei(); 
-            }
+            if(button) ++state;
+            if(timeout) state = OFF;
             break;
+         case WAIT_ONE:
          case WAIT_THREE:
-            if(!button()) {
-               cli();
-               state = ON;
-               STATE(ON);
-               DDRB |= _BV(LED);
-               /* OCR1B = pwm; */
-               /* OCR1B = 1; */
-               /* OCR0A = 0xff; */
-               set_timeout(0);
-               sei();
-            }
+            if(!button) ++state;
+            if(timeout) state = OFF;
             break;
          case ON:
-            if(button()) {
-               cli();
-               state = DIM_WAIT;
-               STATE(DIM_WAIT);
-               set_timeout(0xff);
-               sei();
-            }
+            if(button) state = DIM_WAIT;
             break;
          case DIM_WAIT:
-            if(!button()) {
-               cli();
-               set_timeout(0);
-               set_sleep_mode(SLEEP_MODE_PWR_DOWN);
-               /* OCR1B = 0; */
-               /* pwm = PWM_MIN; */
-               /* direction = UP; */
-               PORTB &= ~_BV(LED);
-               DDRB &= ~_BV(LED);
-               state = OFF;
-               STATE(OFF);
-               sei();
-            }
+            if(!button) state = OFF;
+            if(timeout) state = DIM;
             break;
          case DIM:
-            if(!button()) {
-               cli();
-               set_timeout(0);
-               state = ON;
-               STATE(ON);
-               sei();
-            }
-            break;
-         case OFF:
-            if(button()){
-               cli();
-               state = WAIT_ONE;
-               STATE(WAIT_ONE);
-               set_timeout(0x80);
-               sei();
-            }
+            if(!button) state = ON;
             break;
       }
+
+      if(state != old_state) {
+         switch(state) {
+            case OFF:
+               set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+               OCR1B = 0;
+               /* pwm = PWM_MIN; */
+               /* direction = UP; */
+               /* PORTB &= ~_BV(LED); */
+               DDRB &= ~_BV(LED);
+               // fallthrough no break
+            case WAIT_ONE:
+            case WAIT_TWO:
+            case WAIT_THREE:
+               TCNT0 = 0;
+               /* OCR0A = 0x80; */
+               /* OCR1B = 255; */
+               /* TIFR |= _BV(OCF0A); */
+               if(state == WAIT_ONE)
+                  set_sleep_mode(SLEEP_MODE_IDLE);
+               break;
+            case ON:
+               DDRB |= _BV(LED);
+               OCR1B = pwm;
+               /* OCR1B = 254; */
+               /* OCR0A = 0xff; */
+               break;
+            case DIM_WAIT:
+               TCNT0 = 0;
+               /* OCR0A = 0xff; */
+               /* TIFR |= _BV(OCF0A); */
+            case DIM:
+               break;
+         }
+
+      }
+
+      sei();
       sleep_mode();
       /* _delay_ms(500); */
    }
