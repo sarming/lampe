@@ -28,14 +28,14 @@ void ioinit (void) {
 
    TCCR0A |= WGM01; // timer 0 CTC mode
    TCCR0B |= _BV(CS02) | _BV(CS00); // /1024 prescale
-   OCR0A = 0x80;
+   /* OCR0A = 0x80; */
 
    GTCCR |= _BV(PWM1B) | _BV(COM1B1);
    TCCR1 |= _BV(CS12) | _BV(CS10); // /16 prescale
    /* OCR1B = pwm; */
 
    /* Enable timer 1 overflow, timer 0 a compare interrupts. */
-   TIMSK = _BV(TOIE1) | _BV(OCIE0A);
+   TIMSK = _BV(TOIE1); // | _BV(OCIE0A);
 
    /* DDRB |= _BV(LED); */
 
@@ -48,10 +48,20 @@ void ioinit (void) {
    sei ();
 }
 
+void set_timeout(uint8_t cnt) {
+   TCNT0 = 0;
+   OCR0A = cnt;
+   TIFR |= _BV(OCF0A);
+   if(cnt)
+      TIMSK |= _BV(OCIE0A);
+   else
+      TIMSK &= ~_BV(OCIE0A);
+}
+
 ISR(PCINT0_vect) {
    set_sleep_mode(SLEEP_MODE_IDLE);
-   if(state == OFF) 
-      TCNT0 = 0;
+   if(state == OFF)
+      set_timeout(0x80);
 }
 
 ISR (TIMER1_OVF_vect) {
@@ -86,9 +96,9 @@ ISR (TIMER0_COMPA_vect) {
          break;
       case DIM_WAIT:
          state = DIM;
-         OCR0A = 0x80;
          break;
    }
+   set_timeout(0);
 }
 
 uint8_t button() {
@@ -126,7 +136,7 @@ int main (void) {
                cli();
                state = WAIT_TWO;
                STATE(WAIT_TWO);
-               TCNT0 = 0;
+               set_timeout(0x80);
                sei(); 
             }
             break;
@@ -135,7 +145,7 @@ int main (void) {
                cli();
                state = WAIT_THREE;
                STATE(WAIT_THREE);
-               TCNT0 = 0;
+               set_timeout(0x80);
                sei(); 
             }
             break;
@@ -148,6 +158,7 @@ int main (void) {
                /* OCR1B = pwm; */
                /* OCR1B = 1; */
                /* OCR0A = 0xff; */
+               set_timeout(0);
                sei();
             }
             break;
@@ -156,15 +167,14 @@ int main (void) {
                cli();
                state = DIM_WAIT;
                STATE(DIM_WAIT);
-               TCNT0 = 0;
-               OCR0A = 0xff;
+               set_timeout(0xff);
                sei();
             }
             break;
          case DIM_WAIT:
             if(!button()) {
                cli();
-               OCR0A = 0x80;
+               set_timeout(0);
                set_sleep_mode(SLEEP_MODE_PWR_DOWN);
                /* OCR1B = 0; */
                /* pwm = PWM_MIN; */
@@ -179,6 +189,7 @@ int main (void) {
          case DIM:
             if(!button()) {
                cli();
+               set_timeout(0);
                state = ON;
                STATE(ON);
                sei();
@@ -189,7 +200,7 @@ int main (void) {
                cli();
                state = WAIT_ONE;
                STATE(WAIT_ONE);
-               TCNT0 = 0;
+               set_timeout(0x80);
                sei();
             }
             break;
