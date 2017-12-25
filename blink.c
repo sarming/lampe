@@ -1,7 +1,6 @@
 #include <inttypes.h>
 #include <avr/sleep.h>
 #include <avr/io.h>
-/* #include <util/delay.h> */
 #include <avr/interrupt.h>
 
 // PCINT3/XTAL1/CLKI/~OC1B/ADC3
@@ -14,8 +13,6 @@
 enum {OFF, WAIT_ONE, WAIT_TWO, WAIT_THREE, ON, DIM, DIM_WAIT};
 enum {UP, DOWN};
 
-#define PWM_MIN 2
-#define PWM_MAX 254
 
 volatile uint8_t state;
 volatile uint8_t direction;
@@ -32,7 +29,6 @@ void ioinit (void) {
 
    GTCCR |= _BV(PWM1B) | _BV(COM1B1);
    TCCR1 |= _BV(CS12) | _BV(CS10); // /16 prescale
-   /* OCR1B = pwm; */
 
    /* Enable timer 1 overflow, timer 0 a compare interrupts. */
    TIMSK = _BV(TOIE1); // | _BV(OCIE0A);
@@ -49,24 +45,32 @@ void ioinit (void) {
 
 EMPTY_INTERRUPT(PCINT0_vect);
 
+#define PWM_MIN 1
+#define OFFSET 32
+
+uint8_t getpwm() {
+   if(pwm <= OFFSET) return PWM_MIN;
+   if(pwm >= 255-OFFSET) return 255;
+   /* if(pwm == 240 && direction == UP) return 0; */
+   /* if(pwm == 16 && direction == DOWN) return 0; */
+   return pwm-OFFSET+PWM_MIN;
+}
+
 ISR (TIMER1_OVF_vect) {
    if (state == DIM ) { // || state == DIM_WAIT ) {
       switch (direction) {
          case UP:
-            if (++pwm >= PWM_MAX){
+            if (++pwm == 255){
                direction = DOWN;
-               --pwm;
             }
             break;
-
          case DOWN:
-            if (--pwm <= PWM_MIN) {
+            if ( -- pwm == 0) {
                direction = UP;
-               ++pwm;
             }
             break;
       }
-      OCR1B = pwm;
+      OCR1B = getpwm();
    }
 }
 
@@ -79,9 +83,6 @@ int main (void) {
    set_sleep_mode(SLEEP_MODE_PWR_DOWN);
 
    ioinit ();
-
-   /* OCR1B = 255; */
-
 
    while(1) {
       cli();
@@ -129,14 +130,12 @@ int main (void) {
             case WAIT_THREE:
                TCNT0 = 0;
                /* OCR0A = 0x80; */
-               /* OCR1B = 255; */
-               /* TIFR |= _BV(OCF0A); */
                if(state == WAIT_ONE)
                   set_sleep_mode(SLEEP_MODE_IDLE);
                break;
             case ON:
                DDRB |= _BV(LED);
-               OCR1B = pwm;
+               OCR1B = getpwm();
                /* OCR1B = 254; */
                /* OCR0A = 0xff; */
                break;
@@ -152,7 +151,6 @@ int main (void) {
 
       sei();
       sleep_mode();
-      /* _delay_ms(500); */
    }
 
    return 0;
