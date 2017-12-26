@@ -9,7 +9,6 @@
 // PCINT4/XTAL2/CLKO/OC1B/ADC2
 #define LED PB4
 
-#define STATE(a)
 enum {OFF, WAIT_ONE, WAIT_TWO, WAIT_THREE, ON, DIM, DIM_WAIT};
 enum {UP, DOWN};
 
@@ -23,12 +22,12 @@ static inline void ioinit (void) {
    CLKPR = _BV(CLKPCE);
    CLKPR = _BV(CLKPS2) | _BV(CLKPS2);
 
-   TCCR0A |= WGM01; // timer 0 CTC mode
-   TCCR0B |= _BV(CS02) | _BV(CS00); // /1024 prescale
+   TCCR0A = WGM01; // timer 0 CTC mode
+   TCCR0B = _BV(CS02) | _BV(CS00); // /1024 prescale
    OCR0A = 0x80;
 
-   GTCCR |= _BV(PWM1B) | _BV(COM1B1);
-   TCCR1 |= _BV(CS12) | _BV(CS10); // /16 prescale
+   GTCCR = _BV(PWM1B) | _BV(COM1B1);
+   TCCR1 = _BV(CS12) | _BV(CS10); // /16 prescale
 
    /* Enable timer 1 overflow, timer 0 a compare interrupts. */
    TIMSK = _BV(TOIE1); // | _BV(OCIE0A);
@@ -38,8 +37,8 @@ static inline void ioinit (void) {
    PORTB = _BV(BUTTON); //enable pullup
 
    // Pin change interrupt on button
-   GIMSK |= _BV(PCIE);
-   PCMSK |= _BV(PCINT3);
+   GIMSK = _BV(PCIE);
+   PCMSK = _BV(PCINT3);
 
 }
 
@@ -90,7 +89,7 @@ int main (void) {
       uint8_t old_state = state;
       uint8_t button =  !(PINB & _BV(BUTTON));
       uint8_t timeout = TIFR & _BV(OCF0A);
-      TIFR |= _BV(OCF0A);
+      TIFR = _BV(OCF0A);
 
       switch(old_state) {
          case OFF:
@@ -120,10 +119,8 @@ int main (void) {
             case OFF:
                set_sleep_mode(SLEEP_MODE_PWR_DOWN);
                OCR1B = 0;
-               /* pwm = PWM_MIN; */
-               /* direction = UP; */
-               /* PORTB &= ~_BV(LED); */
-               DDRB &= ~_BV(LED);
+               DDRB = 0;
+               /* DDRB &= ~_BV(LED); */
                // fallthrough no break
             case WAIT_ONE:
             case WAIT_TWO:
@@ -134,15 +131,14 @@ int main (void) {
                   set_sleep_mode(SLEEP_MODE_IDLE);
                break;
             case ON:
-               DDRB |= _BV(LED);
                OCR1B = getpwm();
+               DDRB = _BV(LED);
                /* OCR1B = 254; */
                /* OCR0A = 0xff; */
                break;
             case DIM_WAIT:
                TCNT0 = 0;
                /* OCR0A = 0xff; */
-               /* TIFR |= _BV(OCF0A); */
             case DIM:
                break;
          }
