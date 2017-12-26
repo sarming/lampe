@@ -18,7 +18,7 @@ volatile uint8_t state;
 volatile uint8_t direction;
 volatile uint8_t pwm;
 
-void ioinit (void) {
+static inline void ioinit (void) {
    // Clock prescale: /64 = 125 KHz
    CLKPR = _BV(CLKPCE);
    CLKPR = _BV(CLKPS2) | _BV(CLKPS2);
@@ -48,7 +48,7 @@ EMPTY_INTERRUPT(PCINT0_vect);
 #define PWM_MIN 1
 #define OFFSET 32
 
-uint8_t getpwm() {
+static inline uint8_t getpwm() {
    if(pwm <= OFFSET) return PWM_MIN;
    if(pwm >= 255-OFFSET) return 255;
    /* if(pwm == 240 && direction == UP) return 0; */
