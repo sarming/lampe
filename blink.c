@@ -12,12 +12,40 @@
 enum {OFF, WAIT_ONE, WAIT_TWO, WAIT_THREE, ON, DIM, DIM_WAIT};
 enum {UP, DOWN};
 
+volatile uint8_t state = OFF;
+volatile uint8_t direction = UP;
+volatile uint8_t pwm = 0;
 
-volatile uint8_t state;
-volatile uint8_t direction;
-volatile uint8_t pwm;
+#define PWM_MIN 1
+#define OFFSET 32
 
-static inline void ioinit (void) {
+static inline uint8_t getpwm() {
+   if(pwm <= OFFSET) return PWM_MIN;
+   if(pwm >= 255 - OFFSET) return 255;
+   return pwm - OFFSET + PWM_MIN;
+}
+
+ISR(TIMER1_OVF_vect) {
+   if (state == DIM ) { // || state == DIM_WAIT ) {
+      switch (direction) {
+         case UP:
+            if (++pwm == 255){
+               direction = DOWN;
+            }
+            break;
+         case DOWN:
+            if ( -- pwm == 0) {
+               direction = UP;
+            }
+            break;
+      }
+      OCR1B = getpwm();
+   }
+}
+
+EMPTY_INTERRUPT(PCINT0_vect);
+
+static inline void ioinit() {
    // Clock prescale: /64 = 125 KHz
    CLKPR = _BV(CLKPCE);
    CLKPR = _BV(CLKPS2) | _BV(CLKPS2);
@@ -42,46 +70,10 @@ static inline void ioinit (void) {
 
 }
 
-EMPTY_INTERRUPT(PCINT0_vect);
-
-#define PWM_MIN 1
-#define OFFSET 32
-
-static inline uint8_t getpwm() {
-   if(pwm <= OFFSET) return PWM_MIN;
-   if(pwm >= 255-OFFSET) return 255;
-   /* if(pwm == 240 && direction == UP) return 0; */
-   /* if(pwm == 16 && direction == DOWN) return 0; */
-   return pwm-OFFSET+PWM_MIN;
-}
-
-ISR (TIMER1_OVF_vect) {
-   if (state == DIM ) { // || state == DIM_WAIT ) {
-      switch (direction) {
-         case UP:
-            if (++pwm == 255){
-               direction = DOWN;
-            }
-            break;
-         case DOWN:
-            if ( -- pwm == 0) {
-               direction = UP;
-            }
-            break;
-      }
-      OCR1B = getpwm();
-   }
-}
-
-int main (void) {
-
-   state = OFF;
-   pwm = PWM_MIN;
-   direction = UP;
+int main() {
+   ioinit ();
 
    set_sleep_mode(SLEEP_MODE_PWR_DOWN);
-
-   ioinit ();
 
    while(1) {
       cli();
@@ -89,6 +81,7 @@ int main (void) {
       uint8_t old_state = state;
       uint8_t button =  !(PINB & _BV(BUTTON));
       uint8_t timeout = TIFR & _BV(OCF0A);
+      // clear timeout flag
       TIFR = _BV(OCF0A);
 
       switch(old_state) {
@@ -121,7 +114,7 @@ int main (void) {
                OCR1B = 0;
                DDRB = 0;
                /* DDRB &= ~_BV(LED); */
-               // fallthrough no break
+               // fallthrough: no break!
             case WAIT_ONE:
             case WAIT_TWO:
             case WAIT_THREE:
@@ -142,7 +135,6 @@ int main (void) {
             case DIM:
                break;
          }
-
       }
 
       sei();
