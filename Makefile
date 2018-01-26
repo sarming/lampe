@@ -4,11 +4,9 @@ MCU=attiny25
 SOURCES=blink.c
 
 PROGRAMMER=dragon_isp
-#auskommentieren für automatische Wahl
 # PORT=-P/dev/ttyS0
 # BAUD=-B115200
 
-#Ab hier nichts verändern
 OBJECTS=$(SOURCES:.c=.o)
 CFLAGS=-c -Os -Wall
 LDFLAGS=
@@ -31,13 +29,20 @@ $(TARGET).elf: $(OBJECTS)
 .c.o:
 	avr-gcc $(CFLAGS) -mmcu=$(MCU) $< -o $@
 
+.c.s:
+	avr-gcc $(CFLAGS) -S -mmcu=$(MCU) $< -o $@
+
 size:
 	avr-size --mcu=$(MCU) -C $(TARGET).elf
 
 program:
-	avrdude -p$(MCU) $(PORT) $(BAUD) -c$(PROGRAMMER) -V -Uflash:w:$(TARGET).hex:a
+	avrdude -p$(MCU) $(PORT) $(BAUD) -c$(PROGRAMMER) -Uflash:w:$(TARGET).hex:a
+
+simul:
+	simulavr -d $(MCU) --file $(TARGET).elf
 
 clean_tmp:
+	rm -rf *.s
 	rm -rf *.o
 	rm -rf *.elf
 
